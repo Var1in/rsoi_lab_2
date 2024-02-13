@@ -1,0 +1,124 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: [ "master" ]
+#  pull_request:
+#    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    - name: Build the Docker image
+      run: docker compose build
+    - name: Run container
+      run: | 
+        docker compose up -d
+    - name: Check loading services
+      run: |
+        chmod +x ./scripts/wait-script.sh
+        chmod +x ./scripts/wait-for.sh
+        ./scripts/wait-script.sh
+      env:
+        WAIT_PORTS: 8080,8070,8060,8050
+
+  test:
+    runs-on: ubuntu-latest
+    needs: [ build ]
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build and run tests the Docker image
+      run: docker-compose -f test_docker-compose.yml up --build --abort-on-container-exit --exit-code-from flask_web
+
+  deploy-gateway:
+    runs-on: ubuntu-latest
+    needs: [ test ]
+    steps:
+    - uses: actions/checkout@v3
+    - name: Trigger deploy via Render API
+      env:
+        deploy_url: ${{ secrets.RENDER_DEPLOY_HOOK_URL_GATEWAY }}
+      run:
+          curl "$deploy_url"
+    - name: Wait for deploy
+      run: sleep 5m
+
+  deploy-reservation-service:
+    runs-on: ubuntu-latest
+    needs: [ test ]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Trigger deploy via Render API
+        env:
+          deploy_url: ${{ secrets.RENDER_DEPLOY_HOOK_URL_RESERVE }}
+        run:
+          curl "$deploy_url"
+      - name: Wait for deploy
+        run: sleep 5m
+
+  deploy-loyalty-service:
+    runs-on: ubuntu-latest
+    needs: [ test ]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Trigger deploy via Render API
+        env:
+          deploy_url: ${{ secrets.RENDER_DEPLOY_HOOK_URL_LOYALTY }}
+        run:
+          curl "$deploy_url"
+      - name: Wait for deploy
+        run: sleep 5m
+
+  deploy-payment-service:
+    runs-on: ubuntu-latest
+    needs: [ test ]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Trigger deploy via Render API
+        env:
+          deploy_url: ${{ secrets.RENDER_DEPLOY_HOOK_URL_PAYMENT }}
+        run:
+          curl "$deploy_url"
+      - name: Wait for deploy
+        run: sleep 5m
+
+  run_api_tests:
+    runs-on: ubuntu-latest
+    needs: [ deploy-gateway, deploy-reservation-service, deploy-loyalty-service, deploy-payment-service]
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v3
+
+      # INstall Node on the runner
+      - name: Install Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16.x'
+
+      # Install the newman command line utility and also install the html extra reporter
+      - name: Install newman
+        run: npm install -g newman
+
+      # Install the html extra reporter
+#      - name: Install reporter
+#        run: npm install -g newman-reporter-htmlextra
+
+      # Make directory to upload the test results
+      - name: Make Directory for results
+        run: mkdir -p testResults
+
+      # Run the POSTMAN collection
+      - name: Run POSTMAN collection
+        run: |
+          newman run ./postman/postman_collection.json -e ./postman/postman_environment.json
+
+      # Upload the contents of Test Results directory to workspace
+      - name: Output the run Details
+        uses: actions/upload-artifact@v2
+        with:
+          name: RunReports
+          path: testResults
