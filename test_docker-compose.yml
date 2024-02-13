@@ -1,0 +1,116 @@
+version: '3.3'
+
+services:
+  flask_web:
+    image: lab_1
+    container_name: lab_1_container
+    build: ./webapp/
+    command: python -m unittest ./tests/test_api_status.py
+#    restart: unless-stopped
+    volumes:
+      - ./webapp/:/usr/src/app/
+    ports:
+      - 5000:5000
+    env_file:
+      - ./webapp/.env.dev
+    networks:
+      - backend
+    depends_on:
+      - db
+      - gateway
+      - reserve_service
+      - payment_service
+      - loyalty_service
+
+  gateway:
+    image: lab_2_service_gateway
+    container_name: lab_2_service_gateway
+    build: ./webapp/
+    command: gunicorn --bind 0.0.0.0:8080 start:app --timeout 300000 --graceful-timeout 300000 --keep-alive 300000 --workers=1 --log-level=debug --worker-class gevent
+#    restart: unless-stopped
+    volumes:
+      - ./webapp/:/usr/src/app/
+    ports:
+      - 8080:8080
+    env_file:
+      - ./webapp/.env.dev
+    networks:
+      - backend
+    depends_on:
+      - db
+
+  reserve_service:
+    image: lab_2_service_reserve
+    container_name: lab_2_service_reserve
+    build: ./webapp/
+    command: gunicorn --bind 0.0.0.0:8070 start:app --timeout 300000 --graceful-timeout 300000 --keep-alive 300000 --workers=1 --log-level=debug --worker-class gevent
+#    restart: unless-stopped
+    volumes:
+      - ./webapp/:/usr/src/app/
+    ports:
+      - 8070:8070
+    env_file:
+      - ./webapp/.env.dev
+    networks:
+      - backend
+    depends_on:
+      - db
+
+  payment_service:
+    image: lab_2_payment_service
+    container_name: lab_2_payment_service
+    build: ./webapp/
+    command: gunicorn --bind 0.0.0.0:8060 start:app --timeout 300000 --graceful-timeout 300000 --keep-alive 300000 --workers=1 --log-level=debug --worker-class gevent
+#    restart: unless-stopped
+    volumes:
+      - ./webapp/:/usr/src/app/
+    ports:
+      - 8060:8060
+    env_file:
+      - ./webapp/.env.dev
+    networks:
+      - backend
+    depends_on:
+      - db
+
+  loyalty_service:
+    image: lab_2_loyalty_service
+    container_name: lab_2_loyalty_service
+    build: ./webapp/
+    command: gunicorn --bind 0.0.0.0:8050 start:app --timeout 300000 --graceful-timeout 300000 --keep-alive 300000 --workers=1 --log-level=debug --worker-class gevent
+#    restart: unless-stopped
+    volumes:
+      - ./webapp/:/usr/src/app/
+    ports:
+      - 8050:8050
+    env_file:
+      - ./webapp/.env.dev
+    networks:
+      - backend
+    depends_on:
+      - db
+
+  db:
+    env_file: ./.env-postgresql
+    container_name: postgres_container
+    image: postgres:14
+    volumes:
+      - db:/var/lib/postgresql/data
+      - ./migrations/:/docker-entrypoint-initdb.d/
+    ports:
+      - 5432:5432
+    restart: unless-stopped
+    networks:
+      - backend
+
+
+volumes:
+  db:
+    driver: local
+  pgadmin:
+    driver: local
+
+
+networks:
+  backend:
+    driver: bridge
